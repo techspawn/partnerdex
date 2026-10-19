@@ -289,6 +289,23 @@ describe('trial gating (spec 7.12)', () => {
     assert.equal(pointAt(included, '2024-02'), 80);
   });
 
+  it('drops a trial with no recorded outcome from included MRR instead of counting it forever', () => {
+    seed([
+      { chargeRef: '1', shopId: '10', amount: 80, activatedAt: '2024-01-10T00:00:00Z' },
+      {
+        chargeRef: '2',
+        shopId: '11',
+        amount: 30,
+        activatedAt: '2024-06-20T00:00:00Z',
+        billingOn: '2024-07-04T00:00:00Z',
+      },
+    ]);
+
+    const included = runMetric('mrr', { ...monthly, includeTrials: 'true' }, { now: NOW });
+    assert.equal(pointAt(included, '2024-01'), 0, 'unknown outcome has no live trial window');
+    assert.equal(pointAt(included, '2024-06'), 30, 'only the trial still inside its window');
+  });
+
   it('splits trials into converted and cancelled, and rates only decided ones', () => {
     seed([
       {
@@ -1152,6 +1169,76 @@ describe('billing cadence before the first sale settles', () => {
     const row = intervalOf('2');
     assert.equal(row.i, 'EVERY_30_DAYS', 'a price the book has never seen stays on the default');
     assert.equal(row.m, 120);
+  });
+
+  it('falls back to the price alone when a plan is renamed onto a known annual price', () => {
+    seed([
+      {
+        chargeRef: '1',
+        shopId: '10',
+        amount: 199,
+        planName: 'basic_plus',
+        billingInterval: 'ANNUAL',
+        activatedAt: '2024-01-05T00:00:00Z',
+        firstSaleAt: '2024-01-05T00:00:00Z',
+      },
+      // A repricing moved $199 onto a plan name no sale has settled for yet.
+      {
+        chargeRef: '2',
+        shopId: '11',
+        amount: 199,
+        planName: 'basic',
+        activatedAt: '2024-05-01T00:00:00Z',
+        billingOn: '2024-05-15T00:00:00Z',
+      },
+    ]);
+
+    const row = intervalOf('2');
+    assert.equal(row.i, 'ANNUAL');
+    assert.ok(Math.abs(row.m - 199 / 12) < 0.01);
+  });
+
+  it('reads a never-paid price as annual when it sits in the app’s annual price band', () => {
+    seed([
+      {
+        chargeRef: '1',
+        shopId: '10',
+        amount: 35,
+        planName: 'plus',
+        activatedAt: '2024-01-05T00:00:00Z',
+        firstSaleAt: '2024-01-05T00:00:00Z',
+      },
+      {
+        chargeRef: '2',
+        shopId: '11',
+        amount: 149,
+        planName: 'basic',
+        billingInterval: 'ANNUAL',
+        activatedAt: '2024-01-05T00:00:00Z',
+        firstSaleAt: '2024-01-05T00:00:00Z',
+      },
+      // Above every monthly price ever paid, inside the annual band: annual.
+      {
+        chargeRef: '3',
+        shopId: '12',
+        amount: 349,
+        planName: 'plus',
+        activatedAt: '2024-05-01T00:00:00Z',
+        billingOn: '2024-05-15T00:00:00Z',
+      },
+      // Above the monthly prices but below every annual one: still monthly.
+      {
+        chargeRef: '4',
+        shopId: '13',
+        amount: 60,
+        planName: 'pro',
+        activatedAt: '2024-05-01T00:00:00Z',
+        billingOn: '2024-05-15T00:00:00Z',
+      },
+    ]);
+
+    assert.equal(intervalOf('3').i, 'ANNUAL');
+    assert.equal(intervalOf('4').i, 'EVERY_30_DAYS');
   });
 
   it('abstains where the same price point has been billed both ways', () => {

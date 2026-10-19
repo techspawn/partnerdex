@@ -60,6 +60,7 @@ export interface SubscriptionFixture {
   unfrozenAt?: string;
   billingInterval?: 'EVERY_30_DAYS' | 'ANNUAL';
   billingOn?: string;
+  planName?: string;
   test?: boolean;
   /** Extra paid charges after the first, for revenue tests. */
   extraSales?: Array<{ at: string; gross: number }>;
@@ -89,7 +90,7 @@ export function seed(
   for (const fixture of fixtures) {
     const charge = {
       id: `gid://shopify/AppSubscription/${fixture.chargeRef}`,
-      name: 'Plan',
+      name: fixture.planName ?? 'Plan',
       test: fixture.test ?? false,
       billingOn: fixture.billingOn ?? null,
       amount: { amount: String(fixture.amount), currencyCode: 'USD' },

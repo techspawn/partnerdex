@@ -76,6 +76,12 @@ export function asOfPredicate(options: AsOfOptions, asOfExpr: string): Fragment 
   clauses.push(`${gate} IS NOT NULL`);
   clauses.push(`${gate} < ${asOfExpr}`);
   clauses.push(`(s.churn_at IS NULL OR s.churn_at >= ${asOfExpr})`);
+  // Before it pays, a trial counts only while its window is open. One with no
+  // recorded outcome has no window (see `onTrialSeries`), so without this it
+  // would sit in MRR at full price forever.
+  if (options.includeTrials) {
+    clauses.push(`(s.conversion_at < ${asOfExpr} OR s.trial_ends_at >= ${asOfExpr})`);
+  }
 
   // A frozen subscription is still installed but bills nothing. Frozen wins
   // unless an unfreeze has already landed by the as-of instant.
